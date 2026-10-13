@@ -100,8 +100,10 @@ export function StudiosPage({ workspace, onAdd, onUpdate, onOpenBoard, onVaultCh
 }) {
   const [tab, setTab] = useState<StudioTab>('documents')
   const [tree, setTree] = useState<ProjectFile[]>([])
+  const [treeLoading, setTreeLoading] = useState(true)
   const [selectedPath, setSelectedPath] = useState('')
   const [code, setCode] = useState('')
+  const [codeLoading, setCodeLoading] = useState(false)
   const [codeError, setCodeError] = useState('')
   const [treeError, setTreeError] = useState('')
   const [briefStatus, setBriefStatus] = useState('')
@@ -121,11 +123,13 @@ export function StudiosPage({ workspace, onAdd, onUpdate, onOpenBoard, onVaultCh
     setTree([])
     setSelectedPath('')
     setCode('')
+    setCodeLoading(false)
     setCodeError('')
     setTreeError('')
     setRepoFigure(null)
-    if (!workspace.path || !inDesktopApp) return
-    void invoke<ProjectFile[]>('list_project_files', { path: workspace.path }).then((result) => { if (!cancelled) { setTree(result); setTreeError('') } }).catch((error) => { if (!cancelled) setTreeError(String(error)) })
+    if (!workspace.path || !inDesktopApp) { setTreeLoading(false); return }
+    setTreeLoading(true)
+    void invoke<ProjectFile[]>('list_project_files', { path: workspace.path }).then((result) => { if (!cancelled) { setTree(result); setTreeError('') } }).catch((error) => { if (!cancelled) setTreeError(String(error)) }).finally(() => { if (!cancelled) setTreeLoading(false) })
     return () => { cancelled = true; codeRequestRef.current += 1 }
   }, [workspace.id, workspace.path])
 
@@ -135,11 +139,12 @@ export function StudiosPage({ workspace, onAdd, onUpdate, onOpenBoard, onVaultCh
     setSelectedPath(path)
     setCode('')
     setCodeError('')
+    setCodeLoading(true)
     try {
       const content = await invoke<string>('read_project_file', { path: workspace.path, relativePath: path })
-      if (request === codeRequestRef.current) setCode(content)
+      if (request === codeRequestRef.current) { setCode(content); setCodeLoading(false) }
     } catch (error) {
-      if (request === codeRequestRef.current) setCodeError(String(error))
+      if (request === codeRequestRef.current) { setCodeError(String(error)); setCodeLoading(false) }
     }
   }
 
@@ -205,7 +210,7 @@ export function StudiosPage({ workspace, onAdd, onUpdate, onOpenBoard, onVaultCh
       <section className="studio-tool-panel"><div className="studio-actions"><div><h2>Board map</h2><p>A diagram of cards and connections in this workspace.</p></div><div><button className="button button-outline" onClick={() => download(`${safeName}-board-map.svg`, boardDiagram, 'image/svg+xml')}>Export SVG</button><button className="button button-outline" onClick={() => downloadPng(boardDiagram, `${safeName}-board-map.png`)}>Export PNG</button><button className="button button-outline" onClick={() => download(`${safeName}.excalidraw`, JSON.stringify(excalidrawScene(workspace.nodes, workspace.edges), null, 2), 'application/json')}>Export Excalidraw</button><button className="button button-primary" onClick={() => onPinDiagram(boardDiagram)}>Pin to board</button></div></div><div className="board-map-preview" dangerouslySetInnerHTML={{ __html: boardDiagram }} />{!workspace.nodes.length && <p className="studio-empty-hint">Add cards to the board to generate a project map.</p>}</section>
     </div>}
 
-    {tab === 'code' && <section className="studio-tool-panel code-browser"><div className="studio-actions"><div><h2>Repository files</h2><p>{workspace.path ?? 'Open a project folder to browse source files.'} · read-only preview · files over 1 MB are skipped</p></div></div>{!workspace.path ? <div className="empty-surface"><h2>No project is open</h2><p>Choose a local repository to browse files.</p></div> : <div className="code-workspace"><nav className="code-tree" aria-label="Project files">{tree.map((entry) => <button className={selectedPath === entry.path ? 'selected' : ''} key={entry.path} style={{ paddingLeft: `${12 + entry.path.split('/').length * 10}px` }} disabled={entry.directory} onClick={() => void openCode(entry.path)}><span>{entry.directory ? '▸' : '·'}</span>{entry.path.split('/').pop()}</button>)}{treeError && <p className="code-error">{treeError}</p>}</nav><article className="code-preview">{selectedPath ? <><header><code>{selectedPath}</code><button className="button button-outline" onClick={() => onPinCode(selectedPath, code)} disabled={!code}>Pin to board</button></header>{codeError ? <p className="code-error">{codeError}</p> : code ? <CodePreview path={selectedPath} content={code} /> : <div className="code-placeholder"><p>Loading local source…</p></div>}</> : <div className="code-placeholder"><span>‹/›</span><p>Select a source file to preview it.</p></div>}</article></div>}</section>}
+    {tab === 'code' && <section className="studio-tool-panel code-browser"><div className="studio-actions"><div><h2>Repository files</h2><p>{workspace.path ?? 'Open a project folder to browse source files.'} · read-only preview · files over 1 MB are skipped</p></div></div>{!workspace.path ? <div className="empty-surface"><h2>No project is open</h2><p>Choose a local repository to browse files.</p></div> : <div className="code-workspace"><nav className="code-tree" aria-label="Project files">{tree.map((entry) => <button className={selectedPath === entry.path ? 'selected' : ''} key={entry.path} style={{ paddingLeft: `${12 + entry.path.split('/').length * 10}px` }} disabled={entry.directory} onClick={() => void openCode(entry.path)}><span>{entry.directory ? '▸' : '·'}</span>{entry.path.split('/').pop()}</button>)}{treeLoading && <p className="code-loading">Loading files…</p>}{!treeLoading && !treeError && !tree.length && <p className="code-loading">{inDesktopApp ? 'No files found in this project.' : 'File browsing is available in the desktop app.'}</p>}{treeError && <p className="code-error">{treeError}</p>}</nav><article className="code-preview">{selectedPath ? <><header><code>{selectedPath}</code><button className="button button-outline" onClick={() => onPinCode(selectedPath, code)} disabled={!code}>Pin to board</button></header>{codeError ? <p className="code-error">{codeError}</p> : codeLoading ? <div className="code-placeholder"><p>Loading local source…</p></div> : <CodePreview path={selectedPath} content={code} />}</> : <div className="code-placeholder"><span>‹/›</span><p>Select a source file to preview it.</p></div>}</article></div>}</section>}
 
     <div className={`studio-vault-layer ${tab === 'vault' ? '' : 'studio-vault-layer-hidden'}`} aria-hidden={tab !== 'vault'}>
       <VaultWorkspace key={workspace.id} workspace={workspace} onVaultChange={onVaultChange} onRegisterFlush={onRegisterVaultFlush} />

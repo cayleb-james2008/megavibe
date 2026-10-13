@@ -18,17 +18,17 @@
 .studio-vault-workspace .vault-sidebar > button:not(.icon-button) { flex-wrap: wrap; }
 .studio-vault-workspace .vault-sidebar-title > div { display: flex; gap: 3px; }
 .studio-vault-workspace .vault-sidebar .vault-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.studio-vault-workspace .vault-sidebar button small { display: block; width: calc(100% - 20px); margin-left: 20px; overflow: hidden; color: #77787d; font-family: var(--mono); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.studio-vault-workspace .vault-sidebar button small { display: block; width: calc(100% - 20px); margin-left: 20px; overflow: hidden; color: var(--dim); font-family: var(--mono); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .studio-vault-workspace .studio-vault-graph { display: flex; min-height: 330px; }
 .studio-graph-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.studio-graph-head > span { color: #737478; font-family: var(--mono); font-size: 7px; }
+.studio-graph-head > span { color: var(--dim); font-family: var(--mono); font-size: 7px; }
 .studio-vault-graph svg { min-height: 290px; }
 .studio-vault-graph .vault-graph-node:focus { outline: none; }
 .studio-vault-graph .vault-graph-node:focus circle { stroke: #f0b393; stroke-width: 3px; }
 .studio-vault-graph .vault-graph-node.selected circle { fill: #efaa81; stroke: #60412f; stroke-width: 4px; }
 .studio-vault-graph .vault-graph-node text { pointer-events: none; }
 .vault-file-path { display: flex; align-items: center; gap: 6px; padding: 7px 0 0; }
-.vault-file-path label { color: #87878a; font-family: var(--mono); font-size: 7px; }
+.vault-file-path label { color: var(--muted); font-family: var(--mono); font-size: 7px; }
 .vault-file-path input { min-width: 0; flex: 1; padding: 5px 7px; color: #aeadab; border: 1px solid #303135; border-radius: 4px; background: #141517; font-family: var(--mono); font-size: 7px; }
 .vault-file-path .text-button { white-space: nowrap; }
 .vault-delete { color: #c28d86 !important; }

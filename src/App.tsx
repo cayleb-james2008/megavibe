@@ -95,6 +95,19 @@ function downloadMarkdown(filename: string, content: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+function useEscapeKey(onEscape: () => void, enabled = true) {
+  const handlerRef = useRef(onEscape)
+  handlerRef.current = onEscape
+  useEffect(() => {
+    if (!enabled) return
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handlerRef.current()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [enabled])
+}
+
 function App() {
   const [state, setStateUnsafe] = useState<AppState>(() => createInitialState())
   const [loaded, setLoaded] = useState(false)
@@ -104,6 +117,7 @@ function App() {
   const [saving, setSaving] = useState<'saved' | 'saving' | 'error'>('saved')
   const [closing, setClosing] = useState(false)
   const [notice, setNotice] = useState('')
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
   const [terminalDraft, setTerminalDraft] = useState<TerminalDraft | null>(null)
   const [startupResumes, setStartupResumes] = useState<StartupResumeCandidate[] | null>(null)
   const [selectedResumeIds, setSelectedResumeIds] = useState<string[]>([])
@@ -128,6 +142,7 @@ function App() {
   const closingRef = useRef(false)
   const startTasksRef = useRef<Record<string, Promise<void>>>({})
   const stopTasksRef = useRef<Record<string, Promise<boolean>>>({})
+  const workspaceMenuRef = useRef<HTMLDivElement>(null)
   const vaultFlushRef = useRef<() => Promise<boolean>>(() => Promise.resolve(true))
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
   const autosaveTimer = useRef<number | undefined>(undefined)
@@ -368,6 +383,16 @@ function App() {
     window.clearTimeout(toastTimer.current)
     toastTimer.current = window.setTimeout(() => setNotice(''), 5000)
   }
+
+  useEffect(() => {
+    if (!workspaceMenuOpen) return
+    const close = (event: MouseEvent) => {
+      if (!workspaceMenuRef.current?.contains(event.target as Node)) setWorkspaceMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [workspaceMenuOpen])
+  useEscapeKey(() => setWorkspaceMenuOpen(false), workspaceMenuOpen)
 
   const updateWorkspace = useCallback((id: string, update: (workspace: Workspace) => Workspace) => {
     setState((current) => ({
@@ -976,25 +1001,22 @@ function App() {
 
         <main className="app-main">
           <header className="topbar">
-            <div className="workspace-picker-wrap">
-              <button className="workspace-picker" onClick={(event) => {
-                const menu = event.currentTarget.nextElementSibling as HTMLElement | null
-                menu?.classList.toggle('show')
-              }}>
+            <div className="workspace-picker-wrap" ref={workspaceMenuRef}>
+              <button className="workspace-picker" aria-haspopup="menu" aria-expanded={workspaceMenuOpen} onClick={() => setWorkspaceMenuOpen((open) => !open)}>
                 <span className="project-glyph">◈</span>
                 <span className="workspace-picker-label"><strong>{workspace?.name ?? 'Workspace'}</strong><small>{workspace?.path ?? 'Personal workspace'}</small></span>
                 <span className="chevron">⌄</span>
               </button>
-              <div className="workspace-menu">
+              <div className={`workspace-menu ${workspaceMenuOpen ? 'show' : ''}`}>
                 {state.workspaces.map((item) => <button key={item.id} onClick={() => {
                   void switchWorkspace(item.id)
-                  document.querySelector('.workspace-menu')?.classList.remove('show')
+                  setWorkspaceMenuOpen(false)
                 }}><span>{item.id === state.activeWorkspaceId ? '●' : '○'}</span><span>{item.name}</span><small>{item.path || 'personal'}</small></button>)}
-                <button className="menu-add" onClick={() => { document.querySelector('.workspace-menu')?.classList.remove('show'); void openProject() }}><span>＋</span><span>Open project folder…</span></button>
+                <button className="menu-add" onClick={() => { setWorkspaceMenuOpen(false); void openProject() }}><span>＋</span><span>Open project folder…</span></button>
               </div>
             </div>
             <nav className="primary-nav" aria-label="Workspace sections">
-              {(['board', 'voice', 'teams', 'studios', 'git', 'usage', 'memory', 'profiles', 'loops', 'settings'] as Page[]).map((item) => <button key={item} className={page === item ? 'selected' : ''} onClick={() => setPage(item)}>{item === 'git' ? 'Git' : item === 'voice' ? 'Voice' : item[0].toUpperCase() + item.slice(1)}</button>)}
+              {(['board', 'voice', 'teams', 'studios', 'git', 'usage', 'memory', 'profiles', 'loops', 'settings'] as Page[]).map((item) => <button key={item} className={page === item ? 'selected' : ''} aria-current={page === item ? 'page' : undefined} onClick={() => setPage(item)}>{item === 'git' ? 'Git' : item === 'voice' ? 'Voice' : item[0].toUpperCase() + item.slice(1)}</button>)}
             </nav>
             <div className="topbar-right">
               <span className={`save-indicator ${saving}`}><i />{saving === 'saving' ? 'Saving' : saving === 'error' ? 'Save issue' : 'Local save'}</span>
@@ -1009,6 +1031,7 @@ function App() {
               key={workspace.id}
               workspace={workspace}
               statuses={statuses}
+              onNotice={showNotice}
               onAddNode={addNode}
               onImageDrop={addImage}
               onOpenBatch={() => setBatchDialog(true)}
@@ -1061,6 +1084,7 @@ function App() {
 function BoardPage({
   workspace,
   statuses,
+  onNotice,
   onAddNode,
   onImageDrop,
   onOpenBatch,
@@ -1073,6 +1097,7 @@ function BoardPage({
 }: {
   workspace: Workspace
   statuses: Record<string, RuntimeStatus>
+  onNotice: (text: string) => void
   onAddNode: (kind: ItemKind) => void
   onImageDrop: (dataUrl: string, name: string, position: XYPosition) => void
   onOpenBatch: () => void
@@ -1088,9 +1113,24 @@ function BoardPage({
   const [toolsOpen, setToolsOpen] = useState(false)
   const [presetsOpen, setPresetsOpen] = useState(false)
   const imagePicker = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!toolsOpen && !presetsOpen) return
+    const close = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement).closest('.tool-menu-wrap')) { setToolsOpen(false); setPresetsOpen(false) }
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setToolsOpen(false); setPresetsOpen(false) }
+    }
+    document.addEventListener('mousedown', close)
+    window.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', escape)
+    }
+  }, [toolsOpen, presetsOpen])
   function importImage(file: File, position: XYPosition) {
     if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 1024 * 1024) {
-      window.alert('Choose a PNG, JPEG, WebP, or GIF image smaller than 1 MB.')
+      onNotice('Choose a PNG, JPEG, WebP, or GIF image smaller than 1 MB.')
       return
     }
     const reader = new FileReader()
@@ -1111,7 +1151,7 @@ function BoardPage({
         <div className="board-path"><span className="path-dot" />{workspace.path ? <><span className="path-root">project</span><span>/</span><strong>{workspace.path}</strong></> : <span>Personal workspace</span>}</div>
         <div className="board-toolbar-actions">
           <div className="tool-menu-wrap">
-            <button className="button button-outline" onClick={() => setToolsOpen(!toolsOpen)}><span>＋</span> Add card <span className="chevron">⌄</span></button>
+            <button className="button button-outline" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={() => setToolsOpen(!toolsOpen)}><span>＋</span> Add card <span className="chevron">⌄</span></button>
             {toolsOpen && <div className="add-card-menu">
               <button onClick={() => { onAddNode('terminal'); setToolsOpen(false) }}><b className="menu-icon terminal">⌘</b><span><strong>Terminal</strong><small>Run a local CLI</small></span></button>
               <button onClick={() => { onAddNode('note'); setToolsOpen(false) }}><b className="menu-icon note">✎</b><span><strong>Note</strong><small>Keep context on the board</small></span></button>
@@ -1121,13 +1161,13 @@ function BoardPage({
               <button onClick={() => { onAddNode('calendar'); setToolsOpen(false) }}><b className="menu-icon preview">▣</b><span><strong>Calendar</strong><small>Track dated milestones</small></span></button>
               <button onClick={() => { onAddNode('drawing'); setToolsOpen(false) }}><b className="menu-icon note">✳</b><span><strong>Drawing</strong><small>Sketch directly on the board</small></span></button>
               <button onClick={() => { imagePicker.current?.click(); setToolsOpen(false) }}><b className="menu-icon note">▧</b><span><strong>Image markup</strong><small>Annotate a local image</small></span></button>
-              <button onClick={() => { onAddNode('preview'); setToolsOpen(false) }}><b className="menu-icon preview">↗</b><span><strong>Web preview</strong><small>Pin a local URL</small></span></button>
+              <button onClick={() => { onAddNode('preview'); setToolsOpen(false) }}><b className="menu-icon preview">↗</b><span><strong>Web preview</strong><small>Pin a local or web URL</small></span></button>
               <button onClick={() => { onAddNode('git'); setToolsOpen(false) }}><b className="menu-icon git">⑂</b><span><strong>Git status</strong><small>Keep local changes on the board</small></span></button>
             </div>}
           </div>
           <button className="button button-outline" onClick={onOpenBatch}>Batch composer</button>
           <button className="button button-outline" onClick={onStartAll} disabled={!workspace.nodes.some((node) => node.data.kind === 'terminal')}>Start all</button>
-          <div className="tool-menu-wrap"><button className="button button-outline" onClick={() => setPresetsOpen(!presetsOpen)}>Presets <span className="chevron">⌄</span></button>{presetsOpen && <div className="add-card-menu layout-menu">{(['grid', 'columns', 'rows'] as const).map((preset) => <button key={preset} onClick={() => { onPreset(preset); setPresetsOpen(false) }}><b className="menu-icon preview">▦</b><span><strong>{preset === 'grid' ? 'Balanced grid' : preset === 'columns' ? 'Two columns' : 'Three rows'}</strong><small>Rearrange board cards</small></span></button>)}</div>}</div>
+          <div className="tool-menu-wrap"><button className="button button-outline" aria-haspopup="menu" aria-expanded={presetsOpen} onClick={() => setPresetsOpen(!presetsOpen)}>Presets <span className="chevron">⌄</span></button>{presetsOpen && <div className="add-card-menu layout-menu">{(['grid', 'columns', 'rows'] as const).map((preset) => <button key={preset} onClick={() => { onPreset(preset); setPresetsOpen(false) }}><b className="menu-icon preview">▦</b><span><strong>{preset === 'grid' ? 'Balanced grid' : preset === 'columns' ? 'Two columns' : 'Three rows'}</strong><small>Rearrange board cards</small></span></button>)}</div>}</div>
           <span className="toolbar-divider" />
           <button className="quiet-icon" onClick={() => zoomOut()} title="Zoom out">−</button>
           <button className="quiet-icon" onClick={() => fitView({ padding: 0.24, duration: 250 })} title="Fit board">⌗</button>
@@ -1167,7 +1207,7 @@ function BoardPage({
           }} maskColor="rgba(8, 9, 11, .75)" />
         </ReactFlow>
         <input ref={imagePicker} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) imageAtCenter(file); event.target.value = '' }} />
-        {workspace.nodes.length === 0 && <div className="empty-board"><div className="empty-board-mark">⌘</div><h2>A clear board, ready for your project.</h2><p>Add terminals, notes, and checklists, then arrange them around the work.</p><button className="button button-primary" onClick={() => onAddNode('terminal')}>＋ Add a console</button></div>}
+        {workspace.nodes.length === 0 && <div className="empty-board"><div className="empty-board-mark">⌘</div><h2>A clear board, ready for your project.</h2><p>Add consoles, notes, and checklists, then arrange them around the work.</p><button className="button button-primary" onClick={() => onAddNode('terminal')}>＋ Add a console</button></div>}
         <div className="canvas-legend"><span><i className="legend-live" /> local process</span><span><i className="legend-note" /> planning card</span><span>Drag the canvas to move around</span></div>
       </div>
     </div>
@@ -1181,6 +1221,8 @@ function TerminalDialog({ draft, setDraft, onClose, onSave, profiles }: {
   onSave: () => void
   profiles: CliProfile[]
 }) {
+  useEscapeKey(onClose)
+  useEscapeKey(onClose)
   const [folderBusy, setFolderBusy] = useState(false)
   async function browse() {
     setFolderBusy(true)
@@ -1193,8 +1235,8 @@ function TerminalDialog({ draft, setDraft, onClose, onSave, profiles }: {
       setFolderBusy(false)
     }
   }
-    const commandName = draft.command.split('/').pop()?.toLowerCase()
-    const matchingProfiles = profiles.filter((profile) => profile.command === '*' || profile.command.toLowerCase() === commandName)
+  const commandName = draft.command.split('/').pop()?.toLowerCase()
+  const matchingProfiles = profiles.filter((profile) => profile.command === '*' || profile.command.toLowerCase() === commandName)
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <form className="modal-card" onSubmit={(event) => { event.preventDefault(); onSave() }}>
@@ -1208,7 +1250,7 @@ function TerminalDialog({ draft, setDraft, onClose, onSave, profiles }: {
         <label className="form-label">Resume arguments <small>Optional custom resume arguments, one per line. Leave blank for Claude/Gemini session IDs or Codex's session picker.</small><textarea className="args-field" value={draft.resumeArgsText} onChange={(event) => setDraft({ ...draft, resumeArgsText: event.target.value })} placeholder="Custom resume arguments" /></label>
         <label className="form-label">Account profile <small>Optional isolated CLI home. Create and sign in to profiles from CLI profiles.</small><select value={draft.profileId ?? ''} onChange={(event) => setDraft({ ...draft, profileId: event.target.value || undefined })}><option value="">Use normal account</option>{matchingProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
         <label className="form-label">Working folder<div className="folder-entry"><input value={draft.cwd} onChange={(event) => setDraft({ ...draft, cwd: event.target.value })} placeholder="Use the project folder or your home directory" /><button type="button" className="button button-outline" onClick={() => void browse()} disabled={!inDesktopApp || folderBusy}>{folderBusy ? '…' : 'Browse'}</button></div></label>
-        <div className="modal-note"><span>◉</span><p>The command runs on this machine in its own interactive terminal. It starts only when you press <strong>Run console</strong>.</p></div>
+        <div className="modal-note"><span>◉</span><p>The command runs on this machine in its own interactive console. It starts only when you press <strong>Run console</strong>.</p></div>
         <div className="modal-footer"><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button type="submit" className="button button-primary">Save console</button></div>
       </form>
     </div>
@@ -1222,6 +1264,8 @@ function StartupResumeDialog({ candidates, selectedIds, onToggle, onStart, onLat
   onStart: () => void
   onLater: () => void
 }) {
+  useEscapeKey(onLater)
+  useEscapeKey(onLater)
   const selected = candidates.filter((candidate) => selectedIds.includes(candidate.terminalId))
   const allResume = selected.length > 0 && selected.every((candidate) => candidate.resume)
   return (
@@ -1297,6 +1341,8 @@ function TeamsPage({ teams, workspace, statuses, missionStatuses, onMention, onM
 }
 
 function TeamDialog({ onClose, onSave }: { onClose: () => void; onSave: (team: Team) => void }) {
+  useEscapeKey(onClose)
+  useEscapeKey(onClose)
   const [name, setName] = useState('New team')
   const [purpose, setPurpose] = useState('A focused crew for this project.')
   function submit(event: FormEvent) {
@@ -1312,7 +1358,7 @@ function TeamDialog({ onClose, onSave }: { onClose: () => void; onSave: (team: T
     })
   }
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><form className="modal-card compact-modal" onSubmit={submit}>
-    <div className="modal-header"><div className="modal-badge team-badge">♧</div><div><h2>Create a team</h2><p>Start with two editable local console roles.</p></div><button type="button" className="icon-button" onClick={onClose}>×</button></div>
+    <div className="modal-header"><div className="modal-badge team-badge">♧</div><div><h2>Create a team</h2><p>Start with two editable local console roles.</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close">×</button></div>
     <label className="form-label">Team name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label>
     <label className="form-label">Purpose<input value={purpose} onChange={(event) => setPurpose(event.target.value)} /></label>
     <div className="modal-footer"><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button className="button button-primary">Create team</button></div>
@@ -1329,6 +1375,7 @@ function TeamMentionDialog({ sourceId, workspace, statuses, onClose, onSend }: {
   const source = workspace.nodes.find((node) => node.id === sourceId)
   const targets = workspace.nodes.filter((node) => node.data.kind === 'terminal' && node.id !== sourceId && statuses[node.id] === 'running')
   const [targetId, setTargetId] = useState(targets[0]?.id ?? '')
+  useEscapeKey(onClose)
   const [message, setMessage] = useState('Can you share your current status and next step?')
   const [sending, setSending] = useState(false)
   async function submit(event: FormEvent) {
@@ -1341,12 +1388,13 @@ function TeamMentionDialog({ sourceId, workspace, statuses, onClose, onSend }: {
       setSending(false)
     }
   }
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><form className="modal-card compact-modal" onSubmit={(event) => { void submit(event) }}><div className="modal-header"><div className="modal-badge team-badge">@</div><div><h2>Prepare team @mention</h2><p>Prepare a message for another running team console.</p></div><button type="button" className="icon-button" onClick={onClose}>×</button></div><label className="form-label">Mention as<input value={source?.data.title ?? ''} readOnly /></label><label className="form-label">To<select value={targetId} onChange={(event) => setTargetId(event.target.value)}>{targets.map((node) => <option key={node.id} value={node.id}>{node.data.title}</option>)}</select></label><label className="form-label">Message<textarea className="args-field" value={message} onChange={(event) => setMessage(event.target.value)} /></label><div className="modal-note"><span>◉</span><p>The message is pasted into the destination console without pressing Enter. Review it there before submitting.</p></div><div className="modal-footer"><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button className="button button-primary" disabled={!targetId || !message.trim() || sending}>{sending ? 'Preparing…' : 'Prepare mention'}</button></div></form></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><form className="modal-card compact-modal" onSubmit={(event) => { void submit(event) }}><div className="modal-header"><div className="modal-badge team-badge">@</div><div><h2>Prepare team @mention</h2><p>Prepare a message for another running team console.</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close">×</button></div><label className="form-label">Mention as<input value={source?.data.title ?? ''} readOnly /></label><label className="form-label">To<select value={targetId} onChange={(event) => setTargetId(event.target.value)}>{targets.map((node) => <option key={node.id} value={node.id}>{node.data.title}</option>)}</select></label><label className="form-label">Message<textarea className="args-field" value={message} onChange={(event) => setMessage(event.target.value)} /></label><div className="modal-note"><span>◉</span><p>The message is pasted into the destination console without pressing Enter. Review it there before submitting.</p></div><div className="modal-footer"><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button className="button button-primary" disabled={!targetId || !message.trim() || sending}>{sending ? 'Preparing…' : 'Prepare mention'}</button></div></form></div>
 }
 
 function BatchDialog({ onClose, onAdd }: { onClose: () => void; onAdd: (items: Array<{ title: string; command: string }>) => void | Promise<void> }) {
+  useEscapeKey(onClose)
   const [slots, setSlots] = useState(() => Array.from({ length: 12 }, (_, index) => ({ enabled: index === 0, title: `Console ${index + 1}`, command: 'bash' })))
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div className="modal-card batch-modal"><div className="modal-header"><div className="modal-badge team-badge">▦</div><div><h2>Batch composer</h2><p>Configure and launch up to twelve local consoles together.</p></div><button type="button" className="icon-button" onClick={onClose}>×</button></div><div className="batch-slots">{slots.map((slot, index) => <div className={`batch-slot ${slot.enabled ? 'enabled' : ''}`} key={index}><label><input type="checkbox" checked={slot.enabled} onChange={(event) => setSlots((current) => current.map((item, slotIndex) => slotIndex === index ? { ...item, enabled: event.target.checked } : item))} /><span>#{String(index + 1).padStart(2, '0')}</span></label><input value={slot.title} aria-label={`Console ${index + 1} name`} onChange={(event) => setSlots((current) => current.map((item, slotIndex) => slotIndex === index ? { ...item, title: event.target.value } : item))} disabled={!slot.enabled} /><select value={slot.command} aria-label={`Console ${index + 1} CLI`} onChange={(event) => setSlots((current) => current.map((item, slotIndex) => slotIndex === index ? { ...item, command: event.target.value } : item))} disabled={!slot.enabled}>{CLI_PRESETS.map((preset) => <option key={preset.command} value={preset.command}>{preset.label}</option>)}</select></div>)}</div><div className="modal-footer"><span className="batch-count">{slots.filter((slot) => slot.enabled).length} / 12 selected</span><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button type="button" className="button button-primary" disabled={!slots.some((slot) => slot.enabled)} onClick={() => void onAdd(slots.filter((slot) => slot.enabled).map(({ title, command }) => ({ title: title.trim() || 'Console', command })))}>Launch selected</button></div></div></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div className="modal-card batch-modal"><div className="modal-header"><div className="modal-badge team-badge">▦</div><div><h2>Batch composer</h2><p>Configure and launch up to twelve local consoles together.</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close">×</button></div><div className="batch-slots">{slots.map((slot, index) => <div className={`batch-slot ${slot.enabled ? 'enabled' : ''}`} key={index}><label><input type="checkbox" checked={slot.enabled} onChange={(event) => setSlots((current) => current.map((item, slotIndex) => slotIndex === index ? { ...item, enabled: event.target.checked } : item))} /><span>#{String(index + 1).padStart(2, '0')}</span></label><input value={slot.title} aria-label={`Console ${index + 1} name`} onChange={(event) => setSlots((current) => current.map((item, slotIndex) => slotIndex === index ? { ...item, title: event.target.value } : item))} disabled={!slot.enabled} /><select value={slot.command} aria-label={`Console ${index + 1} CLI`} onChange={(event) => setSlots((current) => current.map((item, slotIndex) => slotIndex === index ? { ...item, command: event.target.value } : item))} disabled={!slot.enabled}>{CLI_PRESETS.map((preset) => <option key={preset.command} value={preset.command}>{preset.label}</option>)}</select></div>)}</div><div className="modal-footer"><span className="batch-count">{slots.filter((slot) => slot.enabled).length} / 12 selected</span><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button type="button" className="button button-primary" disabled={!slots.some((slot) => slot.enabled)} onClick={() => void onAdd(slots.filter((slot) => slot.enabled).map(({ title, command }) => ({ title: title.trim() || 'Console', command })))}>Launch selected</button></div></div></div>
 }
 
 function GitPage({ workspace, onOpenProject }: { workspace: Workspace; onOpenProject: () => void }) {
@@ -1437,6 +1485,8 @@ function ProfilesPage({ profiles, onCreate }: { profiles: CliProfile[]; onCreate
   const [name, setName] = useState('')
   const [command, setCommand] = useState('claude')
   const [creating, setCreating] = useState(false)
+  useEscapeKey(() => setCreating(false), creating)
+  useEscapeKey(() => setCreating(false), creating)
   function submit(event: FormEvent) {
     event.preventDefault()
     const cleanName = name.trim()
@@ -1449,7 +1499,7 @@ function ProfilesPage({ profiles, onCreate }: { profiles: CliProfile[]; onCreate
     <div className="page-intro"><div><span className="eyebrow">LOCAL CLI ACCOUNTS</span><h1>Profiles</h1><p>Each profile runs with a private home directory. Sign in to the CLI from that profile’s terminal.</p></div><button className="button button-primary" onClick={() => setCreating(true)}>＋ New profile</button></div>
     <div className="feature-note"><span>◉</span><div><strong>Separate local account state</strong><p>Profiles get private HOME and XDG config, data, and cache folders under Megavibe’s app data directory. Megavibe does not copy credentials from your normal account.</p></div></div>
     {profiles.length ? <div className="studio-grid profile-grid">{profiles.map((profile) => <article className="studio-card" key={profile.id}><div className="studio-card-head"><span>ISOLATED HOME</span><span className="team-local-tag"><i /> Local</span></div><strong className="profile-name">{profile.name}</strong><code>{profile.command === '*' ? 'Any CLI' : profile.command}</code><footer><span>{profile.id}</span><span>Credentials are not copied</span></footer></article>)}</div> : <div className="empty-surface"><div className="empty-icon">◎</div><h2>No isolated profiles yet</h2><p>Create one for each account you want to keep separate, then select it when configuring a console.</p><button className="button button-primary" onClick={() => setCreating(true)}>＋ Create a profile</button></div>}
-    {creating && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreating(false) }}><form className="modal-card compact-modal" onSubmit={submit}><div className="modal-header"><div className="modal-badge">◎</div><div><h2>New CLI profile</h2><p>Create an isolated local account home.</p></div><button type="button" className="icon-button" onClick={() => setCreating(false)}>×</button></div><label className="form-label">Profile name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Personal Claude" /></label><label className="form-label">CLI<select value={command} onChange={(event) => setCommand(event.target.value)}><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option><option value="*">Any CLI</option></select></label><div className="modal-note"><span>◉</span><p>The profile starts empty. Run the selected CLI and sign in with the account you want to use there.</p></div><div className="modal-footer"><button type="button" className="button button-outline" onClick={() => setCreating(false)}>Cancel</button><button className="button button-primary">Create profile</button></div></form></div>}
+    {creating && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreating(false) }}><form className="modal-card compact-modal" onSubmit={submit}><div className="modal-header"><div className="modal-badge">◎</div><div><h2>New CLI profile</h2><p>Create an isolated local account home.</p></div><button type="button" className="icon-button" onClick={() => setCreating(false)} aria-label="Close">×</button></div><label className="form-label">Profile name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Personal Claude" /></label><label className="form-label">CLI<select value={command} onChange={(event) => setCommand(event.target.value)}><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="gemini">Gemini CLI</option><option value="*">Any CLI</option></select></label><div className="modal-note"><span>◉</span><p>The profile starts empty. Run the selected CLI and sign in with the account you want to use there.</p></div><div className="modal-footer"><button type="button" className="button button-outline" onClick={() => setCreating(false)}>Cancel</button><button className="button button-primary">Create profile</button></div></form></div>}
   </div>
 }
 
@@ -1463,10 +1513,10 @@ function MemoryPage({ workspace, globalMemory, terminals, onSave, onPush }: {
   const [target, setTarget] = useState(terminals[0]?.id ?? '')
   useEffect(() => { if (!terminals.some((item) => item.id === target)) setTarget(terminals[0]?.id ?? '') }, [terminals, target])
   return <div className="secondary-page memory-page">
-    <div className="page-intro"><div><span className="eyebrow">LOCAL CONTEXT</span><h1>Memory</h1><p>Keep reusable project and global notes here, then deliberately place them in a local terminal.</p></div><span className="local-only-pill"><i /> Stored locally</span></div>
-    <div className="memory-grid"><section className="memory-card"><div className="panel-heading"><div><h2>Project memory</h2><p>Context for {workspace.name}</p></div><span className="activity-range">WORKSPACE</span></div><textarea value={workspace.projectMemory ?? ''} onChange={(event) => onSave('project', event.target.value)} placeholder="Decisions, conventions, project-specific context…"/><div className="memory-footer"><span>Saved with this workspace</span><button className="button button-outline" onClick={() => void onPush(target, 'project')} disabled={!target || !workspace.projectMemory?.trim()}>Push to terminal</button></div></section>
-    <section className="memory-card"><div className="panel-heading"><div><h2>Global memory</h2><p>Context shared across your workspaces</p></div><span className="activity-range">ALL WORKSPACES</span></div><textarea value={globalMemory} onChange={(event) => onSave('global', event.target.value)} placeholder="Preferences and context useful in any project…"/><div className="memory-footer"><span>Saved in Megavibe local data</span><button className="button button-outline" onClick={() => void onPush(target, 'global')} disabled={!target || !globalMemory.trim()}>Push to terminal</button></div></section></div>
-    <div className="memory-target"><label>Target console<select value={target} onChange={(event) => setTarget(event.target.value)}><option value="">No running console</option>{terminals.map((item) => <option key={item.id} value={item.id}>{item.data.title}</option>)}</select></label><small>Megavibe pastes this text without pressing Enter. Review it in the terminal before submitting.</small></div>
+    <div className="page-intro"><div><span className="eyebrow">LOCAL CONTEXT</span><h1>Memory</h1><p>Keep reusable project and global notes here, then deliberately place them in a local console.</p></div><span className="local-only-pill"><i /> Stored locally</span></div>
+    <div className="memory-grid"><section className="memory-card"><div className="panel-heading"><div><h2>Project memory</h2><p>Context for {workspace.name}</p></div><span className="activity-range">WORKSPACE</span></div><textarea value={workspace.projectMemory ?? ''} onChange={(event) => onSave('project', event.target.value)} placeholder="Decisions, conventions, project-specific context…"/><div className="memory-footer"><span>Saved with this workspace</span><button className="button button-outline" onClick={() => void onPush(target, 'project')} disabled={!target || !workspace.projectMemory?.trim()}>Push to console</button></div></section>
+    <section className="memory-card"><div className="panel-heading"><div><h2>Global memory</h2><p>Context shared across your workspaces</p></div><span className="activity-range">ALL WORKSPACES</span></div><textarea value={globalMemory} onChange={(event) => onSave('global', event.target.value)} placeholder="Preferences and context useful in any project…"/><div className="memory-footer"><span>Saved in Megavibe local data</span><button className="button button-outline" onClick={() => void onPush(target, 'global')} disabled={!target || !globalMemory.trim()}>Push to console</button></div></section></div>
+    <div className="memory-target"><label>Target console<select value={target} onChange={(event) => setTarget(event.target.value)}><option value="">No running console</option>{terminals.map((item) => <option key={item.id} value={item.id}>{item.data.title}</option>)}</select></label><small>Megavibe pastes this text without pressing Enter. Review it in the console before submitting.</small></div>
   </div>
 }
 
@@ -1503,6 +1553,8 @@ function LoopDialog({ terminals, onClose, onSave }: {
   onClose: () => void
   onSave: (rule: Pick<LoopRule, 'name' | 'terminalId' | 'trigger' | 'intervalMinutes' | 'outputMatch' | 'prompt' | 'goal' | 'maxRuns'>) => void
 }) {
+  useEscapeKey(onClose)
+  useEscapeKey(onClose)
   const [name, setName] = useState('Review loop')
   const [terminalId, setTerminalId] = useState(terminals[0]?.id ?? '')
   const [trigger, setTrigger] = useState<LoopRule['trigger']>('schedule')
@@ -1511,7 +1563,7 @@ function LoopDialog({ terminals, onClose, onSave }: {
   const [prompt, setPrompt] = useState('Review the current state, summarize what changed, and identify the next step.')
   const [goal, setGoal] = useState('Stop when the planned task is complete.')
   const [maxRuns, setMaxRuns] = useState(4)
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><form className="modal-card loop-dialog" onSubmit={(event) => { event.preventDefault(); if (terminalId && prompt.trim() && goal.trim()) onSave({ name: name.trim() || 'Prompt loop', terminalId, trigger, intervalMinutes: Math.max(1, Math.min(1440, intervalMinutes)), outputMatch: outputMatch.trim() || undefined, prompt: prompt.trim(), goal: goal.trim(), maxRuns: Math.max(1, Math.min(100, maxRuns)) }) }}><div className="modal-header"><div className="modal-badge team-badge">↻</div><div><h2>New prompt loop</h2><p>Set a trigger, review prompt, goal, and stop limit.</p></div><button type="button" className="icon-button" onClick={onClose}>×</button></div><label className="form-label">Loop name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label><label className="form-label">Console<select value={terminalId} onChange={(event) => setTerminalId(event.target.value)}>{terminals.map((node) => <option key={node.id} value={node.id}>{node.data.title} · {node.data.command ?? 'bash'}</option>)}</select></label><div className="loop-form-row"><label className="form-label">Trigger<select value={trigger} onChange={(event) => setTrigger(event.target.value as LoopRule['trigger'])}><option value="schedule">Schedule</option><option value="idle">When idle</option><option value="output">On output</option></select></label><label className="form-label">Interval (minutes)<input type="number" min="1" max="1440" value={intervalMinutes} onChange={(event) => setIntervalMinutes(Number(event.target.value) || 1)} /></label></div>{trigger === 'output' && <label className="form-label">Output contains (optional)<input value={outputMatch} onChange={(event) => setOutputMatch(event.target.value)} placeholder="permission, complete, error…" /></label>}<label className="form-label">Prompt<textarea className="args-field" value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label><label className="form-label">Goal<input value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="What will make this loop complete?" /></label><label className="form-label">Maximum prompt count<input type="number" min="1" max="100" value={maxRuns} onChange={(event) => setMaxRuns(Number(event.target.value) || 1)} /></label><div className="modal-note"><span>◉</span><p>Loops are local and bounded. They queue prompts and never auto-submit them.</p></div><div className="modal-footer"><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button className="button button-primary" disabled={!terminals.length || !prompt.trim() || !goal.trim()}>Create loop</button></div></form></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><form className="modal-card loop-dialog" onSubmit={(event) => { event.preventDefault(); if (terminalId && prompt.trim() && goal.trim()) onSave({ name: name.trim() || 'Prompt loop', terminalId, trigger, intervalMinutes: Math.max(1, Math.min(1440, intervalMinutes)), outputMatch: outputMatch.trim() || undefined, prompt: prompt.trim(), goal: goal.trim(), maxRuns: Math.max(1, Math.min(100, maxRuns)) }) }}><div className="modal-header"><div className="modal-badge team-badge">↻</div><div><h2>New prompt loop</h2><p>Set a trigger, review prompt, goal, and stop limit.</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close">×</button></div><label className="form-label">Loop name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label><label className="form-label">Console<select value={terminalId} onChange={(event) => setTerminalId(event.target.value)}>{terminals.map((node) => <option key={node.id} value={node.id}>{node.data.title} · {node.data.command ?? 'bash'}</option>)}</select></label><div className="loop-form-row"><label className="form-label">Trigger<select value={trigger} onChange={(event) => setTrigger(event.target.value as LoopRule['trigger'])}><option value="schedule">Schedule</option><option value="idle">When idle</option><option value="output">On output</option></select></label><label className="form-label">Interval (minutes)<input type="number" min="1" max="1440" value={intervalMinutes} onChange={(event) => setIntervalMinutes(Number(event.target.value) || 1)} /></label></div>{trigger === 'output' && <label className="form-label">Output contains (optional)<input value={outputMatch} onChange={(event) => setOutputMatch(event.target.value)} placeholder="permission, complete, error…" /></label>}<label className="form-label">Prompt<textarea className="args-field" value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label><label className="form-label">Goal<input value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="What will make this loop complete?" /></label><label className="form-label">Maximum prompt count<input type="number" min="1" max="100" value={maxRuns} onChange={(event) => setMaxRuns(Number(event.target.value) || 1)} /></label><div className="modal-note"><span>◉</span><p>Loops are local and bounded. They queue prompts and never auto-submit them.</p></div><div className="modal-footer"><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button className="button button-primary" disabled={!terminals.length || !prompt.trim() || !goal.trim()}>Create loop</button></div></form></div>
 }
 
 function HandoffDialog({ sourceId, workspace, statuses, output, onClose, onSend }: {
@@ -1525,6 +1577,7 @@ function HandoffDialog({ sourceId, workspace, statuses, output, onClose, onSend 
   const source = workspace.nodes.find((node) => node.id === sourceId)
   const targets = workspace.nodes.filter((node) => node.data.kind === 'terminal' && node.id !== sourceId && statuses[node.id] === 'running')
   const [targetId, setTargetId] = useState(targets[0]?.id ?? '')
+  useEscapeKey(onClose)
   const [summary, setSummary] = useState(() => summarizeTerminalOutput(output))
   const [sending, setSending] = useState(false)
   async function submit(event: FormEvent) {
@@ -1537,7 +1590,7 @@ function HandoffDialog({ sourceId, workspace, statuses, output, onClose, onSend 
       setSending(false)
     }
   }
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><form className="modal-card compact-modal" onSubmit={(event) => { void submit(event) }}><div className="modal-header"><div className="modal-badge team-badge">↗</div><div><h2>Prepare handoff</h2><p>Review a local summary draft for another running console.</p></div><button type="button" className="icon-button" onClick={onClose}>×</button></div><label className="form-label">From<input value={source?.data.title ?? ''} readOnly /></label><label className="form-label">To<select value={targetId} onChange={(event) => setTargetId(event.target.value)}>{targets.map((node) => <option key={node.id} value={node.id}>{node.data.title}</option>)}</select></label><label className="form-label">Handoff summary<textarea className="args-field" value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="What has been done, what remains, relevant files, and the next step…" /></label><div className="modal-note"><span>◉</span><p>The draft uses recent local terminal output, masks common tokens, and stays editable. It is pasted without pressing Enter.</p></div><div className="modal-footer"><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button className="button button-primary" disabled={!targetId || !summary.trim() || sending}>{sending ? 'Preparing…' : 'Prepare handoff'}</button></div></form></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><form className="modal-card compact-modal" onSubmit={(event) => { void submit(event) }}><div className="modal-header"><div className="modal-badge team-badge">↗</div><div><h2>Prepare handoff</h2><p>Review a local summary draft for another running console.</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close">×</button></div><label className="form-label">From<input value={source?.data.title ?? ''} readOnly /></label><label className="form-label">To<select value={targetId} onChange={(event) => setTargetId(event.target.value)}>{targets.map((node) => <option key={node.id} value={node.id}>{node.data.title}</option>)}</select></label><label className="form-label">Handoff summary<textarea className="args-field" value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="What has been done, what remains, relevant files, and the next step…" /></label><div className="modal-note"><span>◉</span><p>The draft uses recent local terminal output, masks common tokens, and stays editable. It is pasted without pressing Enter.</p></div><div className="modal-footer"><button type="button" className="button button-outline" onClick={onClose}>Cancel</button><button className="button button-primary" disabled={!targetId || !summary.trim() || sending}>{sending ? 'Preparing…' : 'Prepare handoff'}</button></div></form></div>
 }
 
 function AppRoot() {

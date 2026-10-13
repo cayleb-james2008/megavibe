@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { inDesktopApp, invoke } from '../bridge'
+import { Icon } from '../Icons'
 import type { VaultDocument, Workspace } from '../model'
 import { downloadMarkdownPdf } from './pdfExport'
 import { layoutVaultGraph, linkVaultEntries, migrateLegacyVault, parseVaultFile, serializeVaultEntry, vaultPathForTitle, type VaultEntry, type VaultListing } from './vault'
@@ -257,8 +258,8 @@ export function VaultWorkspace({ workspace, onVaultChange, onRegisterFlush }: { 
   }
 
   return <section className="vault-workspace studio-vault-workspace">
-    <aside className="vault-sidebar"><div className="vault-sidebar-title"><span>LOCAL MARKDOWN</span><div><button className="icon-button" disabled={renaming} onClick={() => void refreshVault()} aria-label="Refresh Markdown vault" title="Refresh from local files">↻</button><button className="icon-button" disabled={renaming} onClick={createNote} aria-label="New Markdown note">＋</button></div></div>
-      {entries.map((entry) => <button key={entry.id} disabled={renaming} className={entry.id === active?.id ? 'selected' : ''} onClick={() => setSelectedId(entry.id)} title={entry.relativePath}><span>▤</span><span className="vault-file-name">{entry.title}</span><small>{entry.relativePath.includes('/') ? entry.relativePath.split('/').slice(0, -1).join('/') : ''}</small></button>)}
+    <aside className="vault-sidebar"><div className="vault-sidebar-title"><span>LOCAL MARKDOWN</span><div><button className="icon-button" disabled={renaming} onClick={() => void refreshVault()} aria-label="Refresh Markdown vault" title="Refresh from local files"><Icon name="refresh" size={13} /></button><button className="icon-button" disabled={renaming} onClick={createNote} aria-label="New Markdown note"><Icon name="plus" size={13} /></button></div></div>
+      {entries.map((entry) => <button key={entry.id} disabled={renaming} className={entry.id === active?.id ? 'selected' : ''} onClick={() => setSelectedId(entry.id)} title={entry.relativePath}><span><Icon name="note" size={18} /></span><span className="vault-file-name">{entry.title}</span><small>{entry.relativePath.includes('/') ? entry.relativePath.split('/').slice(0, -1).join('/') : ''}</small></button>)}
       {entries.length === 0 && <small>No Markdown files yet. Create a note to add one to the local vault.</small>}
     </aside>
     <div className="vault-editor-area">
@@ -270,7 +271,7 @@ export function VaultWorkspace({ workspace, onVaultChange, onRegisterFlush }: { 
         <textarea disabled={renaming} value={active.content} aria-label="Markdown editor" onChange={(event) => editActive((entry) => ({ ...entry, content: event.target.value }))} spellCheck={false} />
         <footer>{saving ? 'Saving to local Markdown file…' : dirtyPaths.current.size ? 'Unsaved local edits' : inDesktopApp && filesystemAvailable ? 'Saved to local Markdown file' : 'Saved to this browser workspace'} · link notes with [[Note title]] · {active.relativePath}</footer>
         {inDesktopApp && error && dirtyPaths.current.size > 0 && <button className="text-button studio-retry-save" onClick={() => void flushFiles()}>Retry save</button>}
-      </> : <div className="code-placeholder"><span>▤</span><p>Create a Markdown note for this workspace.</p><button className="button button-primary" onClick={createNote}>＋ New note</button></div>}
+      </> : <div className="code-placeholder"><span><Icon name="note" size={18} /></span><p>Create a Markdown note for this workspace.</p><button className="button button-primary" onClick={createNote}><Icon name="plus" size={13} /> New note</button></div>}
     </div>
     <aside className="vault-graph studio-vault-graph"><div className="studio-graph-head"><h3>LINK GRAPH</h3><span>Force-directed note map</span></div>{entries.length ? renderGraph() : <p>Notes and their links appear here.</p>}<small>{entries.length} notes · {links.length} links</small></aside>
   </section>

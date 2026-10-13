@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CliProfile } from './model'
 import { inDesktopApp, invoke } from './bridge'
+import { Icon } from './Icons'
 
 type UsageSeries = { cli: string; profileId: string | null; daily: number[]; total: number }
 type UsageAnalytics = { days: number; dates: string[]; series: UsageSeries[]; filesScanned: number; filesSkipped: number; recordsSkipped: boolean }
@@ -56,7 +57,7 @@ export function UsagePage({ profiles }: { profiles: CliProfile[] }) {
   }
 
   return <div className="secondary-page usage-page">
-    <div className="page-intro"><div><span className="eyebrow">LOCAL TOKEN ACTIVITY</span><h1>Usage</h1><p>Local session token totals and on-demand CLI status checks.</p></div><span className="local-only-pill"><i /> Logs stay on this device</span></div>
+    <div className="page-intro"><div><h1>Usage</h1><p>Local session token totals and on-demand CLI status checks.</p></div><span className="local-only-pill"><i /> Logs stay on this device</span></div>
 
     <section className="usage-probes usage-section" aria-labelledby="usage-probes-title">
       <div className="usage-section-heading"><div><h2 id="usage-probes-title">CLI usage</h2><p>Run a fixed read-only status command in the selected CLI account.</p></div></div>
@@ -96,7 +97,7 @@ export function UsagePage({ profiles }: { profiles: CliProfile[] }) {
       </>}
     </section>
 
-    <div className="feature-note"><span>◉</span><div><strong>Private local analytics</strong><p>Log parsing reads token metadata only and ignores message text and prompt fields. Supported formats and known limits are documented in docs/USAGE.md.</p></div></div>
+    <div className="feature-note"><span><Icon name="check" size={11} /></span><div><strong>Private local analytics</strong><p>Log parsing reads token metadata only and ignores message text and prompt fields. Supported formats and known limits are documented in docs/USAGE.md.</p></div></div>
   </div>
 }
 

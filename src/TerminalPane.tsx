@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { invoke } from './bridge'
 import { useBoardRuntime } from './BoardRuntime'
+import { Icon } from './Icons'
 
 export function TerminalPane({ id }: { id: string }) {
   const element = useRef<HTMLDivElement>(null)
@@ -113,7 +114,7 @@ export function TerminalPane({ id }: { id: string }) {
   return (
     <div className={`terminal-pane ${status === 'running' || hasOutput ? 'is-live' : ''}`}>
       <div className="terminal-hint" hidden={status === 'running' || status === 'starting' || hasOutput}>
-        <span className="terminal-hint-mark">›_</span>
+        <span className="terminal-hint-mark"><Icon name="terminal" size={15} /></span>
         <span>Start this console to open a local PTY</span>
       </div>
       <div className="terminal-screen" ref={element} />

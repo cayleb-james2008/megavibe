@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { inDesktopApp, invoke } from './bridge'
+import { Icon } from './Icons'
 
 export type VoiceAction =
   | { kind: 'note'; title: string; content: string }
@@ -211,7 +212,7 @@ export function VoicePage({ boardContext, onApply }: { boardContext: string; onA
       <div className="voice-inner">
         <header className="page-intro">
           <div>
-            <span className="eyebrow">LOCAL VOICE WORKSPACE</span>
+            
             <h1>Voice planner</h1>
             <p>Talk through the next step. Megavibe transcribes and plans on this device, then waits for you to approve board changes.</p>
           </div>
@@ -223,11 +224,11 @@ export function VoicePage({ boardContext, onApply }: { boardContext: string; onA
 
         <div className="voice-layout">
           <section className="voice-panel voice-capture-panel">
-            <div className="voice-panel-heading"><div><span className="eyebrow">SPEAK OR TYPE</span><h2>Plan with your board</h2></div><span className="voice-panel-icon">◖</span></div>
+            <div className="voice-panel-heading"><div><h2>Plan with your board</h2></div><span className="voice-panel-icon">◖</span></div>
             <p className="voice-copy">The planner sees the active workspace name and board notes, checklists, and tasks. It never receives terminal output.</p>
             <div className="voice-recording-row">
               <button className={`button voice-record-button ${recording ? 'recording' : ''}`} disabled={!ready || !status?.microphoneAvailable || processing || downloading} onClick={recording ? () => void finishRecording() : () => void startRecording()}>
-                <span aria-hidden="true">{recording ? '■' : '●'}</span>{recording ? 'Stop and plan' : 'Start recording'}
+                <span aria-hidden="true" className="record-mark">{recording ? <Icon name="stop" size={11} /> : <span className="record-dot" />}</span>{recording ? 'Stop and plan' : 'Start recording'}
               </button>
               <span className="voice-recording-status" role="status">{recording ? `Recording · ${recordingSeconds}s / 60s` : processing ? 'Transcribing and planning locally…' : status?.microphoneAvailable ? 'Microphone ready' : 'No microphone detected'}</span>
             </div>
@@ -241,9 +242,9 @@ export function VoicePage({ boardContext, onApply }: { boardContext: string; onA
           </section>
 
           <section className="voice-panel voice-model-panel">
-            <div className="voice-panel-heading"><div><span className="eyebrow">LOCAL ENGINES</span><h2>Voice setup</h2></div><span className="voice-panel-icon">⌘</span></div>
+            <div className="voice-panel-heading"><div><h2>Voice setup</h2></div><span className="voice-panel-icon"><Icon name="settings" size={15} /></span></div>
             <p className="voice-copy">Download the speech-recognition and planning models once. Spoken replies use Megavibe's built-in US English voice; all processing runs on this device without an account, API key, or voice service.</p>
-            {status?.models.length ? <ul className="voice-model-list">{status.models.map((model) => <li key={model.id}><span className={`voice-model-check ${model.installed ? 'installed' : ''}`}>{model.installed ? '✓' : '·'}</span><span><strong>{model.name}</strong><small>{model.installed ? 'Ready on this device' : formatBytes(model.sizeBytes)}</small></span></li>)}</ul> : <p className="voice-copy">Checking available models…</p>}
+            {status?.models.length ? <ul className="voice-model-list">{status.models.map((model) => <li key={model.id}><span className={`voice-model-check ${model.installed ? 'installed' : ''}`}>{model.installed ? <Icon name="check" size={11} /> : '·'}</span><span><strong>{model.name}</strong><small>{model.installed ? 'Ready on this device' : formatBytes(model.sizeBytes)}</small></span></li>)}</ul> : <p className="voice-copy">Checking available models…</p>}
             {downloading && <div className="voice-download-progress" role="status"><div><span>{activeDownload ? `Downloading ${activeDownload.name}` : 'Preparing model downloads'}</span><strong>{progress ? `${percent}%` : ''}</strong></div><progress max={100} value={percent} /><small>{progress ? `${formatBytes(progress.downloadedBytes)} of ${formatBytes(progress.totalBytes)}` : 'Large files are stored in Megavibe app data.'}</small></div>}
             <div className="voice-model-actions"><button className="button button-primary" onClick={() => void downloadModels()} disabled={!inDesktopApp || ready || downloading}>{downloading ? 'Downloading…' : ready ? 'Voice ready' : 'Download voice models'}</button>{downloading && <button className="button button-outline" onClick={() => void cancelDownload()}>Cancel</button>}</div>
             <p className="voice-model-footnote">Model files are fetched from their public open-source repositories and verified before use. Spoken replies use a built-in 16 kHz voice, so they need no extra download. After setup, voice planning and speech work offline.</p>
@@ -251,7 +252,7 @@ export function VoicePage({ boardContext, onApply }: { boardContext: string; onA
         </div>
 
         {plan && <section className="voice-plan-panel">
-          <div className="voice-panel-heading"><div><span className="eyebrow">REVIEW BEFORE APPLYING</span><h2>Your plan</h2></div><span className="voice-action-count">{plan.actions.length} board {plan.actions.length === 1 ? 'change' : 'changes'}</span></div>
+          <div className="voice-panel-heading"><div><h2>Your plan</h2></div><span className="voice-action-count">{plan.actions.length} board {plan.actions.length === 1 ? 'change' : 'changes'}</span></div>
           {plan.transcript && <div className="voice-transcript"><strong>Heard</strong><p>{plan.transcript}</p></div>}
           <div className="voice-reply"><div><strong>Megavibe</strong><p>{plan.reply || 'Here is a draft based on your request.'}</p></div><button className="button button-outline" onClick={() => void speakReply()} disabled={!ready || speaking || !plan.reply}>{speaking ? 'Speaking…' : 'Speak reply'}</button></div>
           {plan.actions.length > 0 ? <>

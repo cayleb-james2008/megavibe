@@ -1,0 +1,43 @@
+[package]
+name = "megavibe"
+version = "0.1.0"
+description = "A local-first Linux workspace for interactive coding terminals"
+authors = ["Cayleb James"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "megavibe_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.9"
+rfd = "0.15"
+libc = "0.2"
+base64 = "0.22"
+cpal = "0.15"
+flite-rs = { version = "0.2.0", default-features = false, features = ["kal16"] }
+llama-cpp-2 = { version = "0.1.159", features = ["dynamic-link"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "sync"] }
+whisper-rs = "0.16"
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
